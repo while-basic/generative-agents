@@ -1,9 +1,10 @@
 import Phaser from "phaser";
 import BubbleText from "./BubbleText";
 import { Agent, AgentEvents } from "generative-agents";
+import { interactionService } from "../services/interactionService";
 import { locations } from "../data/world";
 
-class AgentCharacter extends Phaser.GameObjects.Sprite {
+export default class AgentCharacter extends Phaser.GameObjects.Sprite {
   private agent: Agent;
 
   private bubbleText: BubbleText;
@@ -13,6 +14,12 @@ class AgentCharacter extends Phaser.GameObjects.Sprite {
   private targetY = 0;
 
   private visualRange: Phaser.GameObjects.Graphics;
+
+  private interactionCooldown = 0;
+  private lastInteractionTime = 0;
+  private minInteractionInterval = 10000; // 10 seconds between interactions
+  private speechBubbleDuration = 10000; // 10 seconds for speech bubbles
+  private speechBubble: Phaser.GameObjects.Container | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -42,6 +49,9 @@ class AgentCharacter extends Phaser.GameObjects.Sprite {
     visualRange.strokeCircle(0, 0, 100);
     scene.add.existing(visualRange);
     this.visualRange = visualRange;
+
+    // Initialize speech bubble (hidden by default)
+    this.createSpeechBubble();
   }
 
   createAnimations() {
@@ -95,6 +105,71 @@ class AgentCharacter extends Phaser.GameObjects.Sprite {
     });
   }
 
+  private createSpeechBubble() {
+    const bubble = this.scene.add.graphics();
+    const text = this.scene.add.text(0, 0, '', {
+      fontSize: '14px',
+      color: '#000000',
+      align: 'center',
+      wordWrap: { width: 150 }
+    });
+
+    this.speechBubble = this.scene.add.container(this.x, this.y - 50, [bubble, text]);
+    this.speechBubble.setVisible(false);
+  }
+
+  public showSpeechBubble(content: string, duration: number = 5000) {
+    if (!this.speechBubble) return;
+
+    const text = this.speechBubble.getAt(1) as Phaser.GameObjects.Text;
+    text.setText(content);
+
+    const padding = 10;
+    const bubble = this.speechBubble.getAt(0) as Phaser.GameObjects.Graphics;
+    bubble.clear();
+    bubble.lineStyle(2, 0x000000, 1);
+    bubble.fillStyle(0xffffff, 1);
+
+    const bounds = text.getBounds();
+    bubble.fillRoundedRect(
+      -padding,
+      -padding,
+      bounds.width + padding * 2,
+      bounds.height + padding * 2,
+      8
+    );
+    bubble.strokeRoundedRect(
+      -padding,
+      -padding,
+      bounds.width + padding * 2,
+      bounds.height + padding * 2,
+      8
+    );
+
+    // Add tail to speech bubble
+    bubble.lineBetween(
+      bounds.width / 2 - 10,
+      bounds.height + padding,
+      bounds.width / 2,
+      bounds.height + padding + 10
+    );
+    bubble.lineBetween(
+      bounds.width / 2 + 10,
+      bounds.height + padding,
+      bounds.width / 2,
+      bounds.height + padding + 10
+    );
+
+    this.speechBubble.setVisible(true);
+
+    // Hide after duration
+    this.scene.time.delayedCall(duration, () => {
+      if (this.speechBubble) {
+        this.speechBubble.setVisible(false);
+      }
+    });
+  }
+
   update() {
     // if not moving, play idle animation
     if (this.targetX === 0 && this.targetY === 0) {
@@ -113,6 +188,14 @@ class AgentCharacter extends Phaser.GameObjects.Sprite {
     // Update the visual range
     this.visualRange.x = this.x;
     this.visualRange.y = this.y;
+
+    // Update speech bubble position
+    if (this.speechBubble) {
+      this.speechBubble.setPosition(this.x, this.y - 50);
+    }
+
+    // Check for nearby agents and potentially interact
+    this.checkForInteractions();
   }
 
   // Add a method to update the bubble text content
@@ -192,6 +275,44 @@ class AgentCharacter extends Phaser.GameObjects.Sprite {
         break;
     }
   }
-}
 
-export default AgentCharacter;
+  private async checkForInteractions() {
+    if (Date.now() - this.lastInteractionTime < this.minInteractionInterval) {
+      return;
+    }
+
+    const scene = this.scene as Phaser.Scene & { characters: AgentCharacter[] };
+    if (!scene.characters) return;
+
+    for (const otherCharacter of scene.characters) {
+      if (otherCharacter === this) continue;
+
+      if (interactionService.canInteract(this, otherCharacter)) {
+        console.log(`${this.agent.name} is in range to interact with ${otherCharacter.agent.name}`);
+        
+        const shouldInteract = Math.random() < 0.3; // 30% chance to interact when nearby
+        
+        if (shouldInteract) {
+          console.log(`${this.agent.name} is initiating interaction with ${otherCharacter.agent.name}`);
+          const interactionType = Math.random() < 0.7 ? 'conversation' : 'rumor';
+          console.log(`Interaction type: ${interactionType}`);
+          
+          const interaction = await interactionService.createInteraction(
+            this.agent,
+            otherCharacter.agent,
+            interactionType
+          );
+
+          if (interaction) {
+            console.log('Interaction content:', interaction.content);
+            const [initiatorText, targetText] = interaction.content.split('|');
+            this.showSpeechBubble(initiatorText.trim(), this.speechBubbleDuration);
+            otherCharacter.showSpeechBubble(targetText.trim(), this.speechBubbleDuration);
+            this.lastInteractionTime = Date.now();
+            otherCharacter.lastInteractionTime = Date.now();
+          }
+        }
+      }
+    }
+  }
+}

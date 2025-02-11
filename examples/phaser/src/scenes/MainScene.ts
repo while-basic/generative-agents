@@ -13,14 +13,11 @@ declare global {
 
 export class MainScene extends Phaser.Scene {
   public agents: Agent[] = [];
+  public characters: AgentCharacter[] = [];
 
   // for displaying agents on screen
   private cameraScrollSpeed = 8;
-  private keyW: Phaser.Input.Keyboard.Key | null = null;
-  private keyA: Phaser.Input.Keyboard.Key | null = null;
-  private keyS: Phaser.Input.Keyboard.Key | null = null;
-  private keyD: Phaser.Input.Keyboard.Key | null = null;
-  private characters: AgentCharacter[] = [];
+  private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
 
   constructor(agents: Agent[]) {
     super({ key: "MainScene" });
@@ -103,10 +100,50 @@ export class MainScene extends Phaser.Scene {
     console.log("Emoji changed to: ", emoji);
   }
 
-  addCharacter(agent: Agent, sprite: string, x: number, y: number) {
-    const newCharacter = new AgentCharacter(this, agent, sprite, x, y);
-    newCharacter.setScale(2);
-    this.characters.push(newCharacter);
+  private addCharacter(
+    agent: Agent,
+    spriteKey: string,
+    x: number,
+    y: number
+  ): void {
+    const character = new AgentCharacter(this, agent, spriteKey, x, y);
+    this.add.existing(character);
+    this.characters.push(character);
+
+    // Create walking animations
+    this.anims.create({
+      key: `${agent.id}_walk_down`,
+      frames: this.anims.generateFrameNumbers(spriteKey, { start: 0, end: 3 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: `${agent.id}_walk_up`,
+      frames: this.anims.generateFrameNumbers(spriteKey, { start: 4, end: 7 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: `${agent.id}_walk_left`,
+      frames: this.anims.generateFrameNumbers(spriteKey, { start: 8, end: 11 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: `${agent.id}_walk_right`,
+      frames: this.anims.generateFrameNumbers(spriteKey, {
+        start: 12,
+        end: 15,
+      }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    // Initialize with down animation
+    character.play(`${agent.id}_walk_down`);
   }
 
   private playBackgroundMusic() {
@@ -118,28 +155,24 @@ export class MainScene extends Phaser.Scene {
   }
 
   /**
-   * allows moving camera using WASD or arrow keys
+   * allows moving camera using arrow keys
    */
   private cameraMovement() {
-    if (!this.input.keyboard) {
-      return;
-    }
-    const cursors = this.input.keyboard.createCursorKeys();
+    if (!this.cursors) return;
 
-    if (cursors.left.isDown || (this.keyA && this.keyA.isDown)) {
-      this.cameras.main.scrollX -= this.cameraScrollSpeed;
+    const camera = this.cameras.main;
+    
+    if (this.cursors.up.isDown) {
+      camera.scrollY -= this.cameraScrollSpeed;
     }
-
-    if (cursors.right.isDown || (this.keyD && this.keyD.isDown)) {
-      this.cameras.main.scrollX += this.cameraScrollSpeed;
+    if (this.cursors.down.isDown) {
+      camera.scrollY += this.cameraScrollSpeed;
     }
-
-    if (cursors.up.isDown || (this.keyW && this.keyW.isDown)) {
-      this.cameras.main.scrollY -= this.cameraScrollSpeed;
+    if (this.cursors.left.isDown) {
+      camera.scrollX -= this.cameraScrollSpeed;
     }
-
-    if (cursors.down.isDown || (this.keyS && this.keyS.isDown)) {
-      this.cameras.main.scrollY += this.cameraScrollSpeed;
+    if (this.cursors.right.isDown) {
+      camera.scrollX += this.cameraScrollSpeed;
     }
   }
 
@@ -173,13 +206,6 @@ export class MainScene extends Phaser.Scene {
   }
 
   private setupKeyboard() {
-    if (!this.input.keyboard) {
-      return;
-    }
-    // Add WASD keys to input.keyboard
-    this.keyW = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    this.keyS = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-    this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+    this.cursors = this.input.keyboard?.createCursorKeys() || null;
   }
 }
